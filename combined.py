@@ -1,4 +1,3 @@
-# app.py
 import streamlit as st
 from dataclasses import dataclass, asdict
 import json
@@ -23,12 +22,12 @@ class CandidateInfo:
     def to_dict(self):
         return asdict(self)
     
-def generate_openai_response(client, messages, model='gpt-4o-mini', temperature=0.1, 
-                             functions=None, function_call=None):
+def generate_openai_response(client, messages, model='gpt-4o-mini',temperature = 0.1, 
+                        functions = None, function_call= None):
     kwargs = {
         "model": model,
         "messages": messages,
-        "temperature": temperature,
+        'temperature': temperature
     }
     
     if functions:
@@ -37,19 +36,8 @@ def generate_openai_response(client, messages, model='gpt-4o-mini', temperature=
         kwargs["function_call"] = function_call
 
     try:
-        # Call the OpenAI API
         response = client.chat.completions.create(**kwargs)
-        message = response.choices[0].message
-
-        # Check if the response contains a function call
-        if hasattr(message, "function_call"):
-            # Parse function call arguments (usually JSON)
-            response_data = json.loads(message.function_call.arguments)
-            return response_data
-        
-        # Standard response
-        return message
-
+        return response.choices[0].message
     except Exception as e:
         print(f"Error in OpenAI API call: {e}")
         return None
@@ -62,24 +50,7 @@ class HiringAssistant:
         self.evaluation_notes = []
         self.topics_covered = set()
         self.candidate_info = None
-        self.follow_up_count = {}  # Track follow-up questions for each topic
-        self.function_schema = [
-            {
-                "name": "natural_end",
-                "description": "Set a flag to exit the interview if the candidate has answered all questions.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                            "should_end": {
-                            "type": "boolean",
-                            "description": "Indicates whether the interview should end after this response."
-                        }
-                    },
-                    "required": ["should_end"]
-                }
-            }
-        ]
-    
+        
     def save_candidate_info(self, info: CandidateInfo):
         """Save candidate information to JSON file"""
         self.candidate_info = info
@@ -90,32 +61,29 @@ class HiringAssistant:
     
     def get_next_response(self, user_input=None):
         
-        total_questions_allowed = 4 * len(self.candidate_info.tech_stack)
-        remaining_questions = total_questions_allowed - len(self.conversation_history)
-
         messages = [
             {"role": "system", "content": f"""You are an AI technical interviewer conducting a screening interview for a {self.candidate_info.desired_position} position.
         The candidate has {self.candidate_info.experience} years of experience and expertise in: {', '.join(self.candidate_info.tech_stack)}.
-        First you need to check if the expertise mentioned are relevant to the position, if else inform the candidate the same and move to next relevant skill
+        First you need to check if the expertise mentioned are relevant to the position, it may be some random words.
+        If not a relevant skill, inform the candidate the same and move to next relevant skill
+
+        And if it is relevant skill:
+        1. Ask relevant technical questions about each technology in their stack
+        2. Ask follow-up questions based on their responses, limiting follow-ups to 1-3 questions per topic.
+        3. Transition to the next topic once follow-ups are exhausted or answers are complete or the user has no proper answer to the question.
+        4. Keep track of topics covered
+        5. End the conversation gracefully once all topics are covered.
+        6. Stay focused on technical assessment
         
-        Your task is to:
-        1. Ask relevant technical questions about each technology in their stack, limiting follow-ups to 1-3 questions per topic.
-        2. Ask follow-up questions based on their responses
-        3. Transition to the next topic once follow-ups are exhausted or answers are complete.
-        4. End the conversation gracefully once all topics are covered.
-        5. Stay focused on technical assessment
-
-        Current constraints:
-        - Total questions allowed: {total_questions_allowed}
-        - Questions remaining: {remaining_questions}
-
         Guidelines:
         - Ask one question at a time
+        - Follow up on interesting points in their answers
         - If an answer is unclear, ask for clarification
         - Keep questions relevant to their experience level
         - Be professional but friendly
+        - Mark topics as covered when sufficiently discussed
         
-        Start by introducing yourself as AI technical interviewer and asking the first technical question."""
+        Start by introducing yourself and asking the first technical question."""
         }]
         
         # Add conversation history
@@ -129,47 +97,43 @@ class HiringAssistant:
         
     
         response = generate_openai_response(self.client, messages)
-        assistant_response = response
+        assistant_response = response.content
         self.conversation_history.append({"role": "assistant", "content": assistant_response})
-
+        
+        # Update topics covered
+        for tech in self.candidate_info.tech_stack:
+            if tech.lower() in user_input.lower() if user_input else False:
+                self.topics_covered.add(tech)
+        
         return assistant_response
+        
+        
+    def should_end_interview(self):
+        if len(self.conversation_history) < 2:
+            return False  # Not enough data to evaluate
+        assistant_message = self.conversation_history[-2]["content"]
+        user_response = self.conversation_history[-1]["content"]
 
-def check_natural_end(self):
-    """Determine if the interview has reached a natural conclusion."""
-    if len(self.conversation_history) < 2:
-        return False  # Not enough data to evaluate
-
-    # Get the latest exchange (last assistant message and user response)
-    assistant_message = self.conversation_history[-2]["content"]
-    user_response = self.conversation_history[-1]["content"]
-
-    # Calculate context
-    total_topics = len(self.candidate_info.tech_stack)
-    covered_topics = len(self.topics_covered)
-    remaining_questions = 4 * total_topics - len(self.conversation_history)
-
-    # System prompt for checking the natural end
-    messages = [
+        # Take the latest assistant message and user: pass and see if its the last one, if flag is set, return True
+        messages = [
         {"role": "system", "content": f"""You are an AI evaluator assisting in a technical interview.
         Your task is to determine if the interview has reached a natural conclusion based on the following context:
-        - Total topics in the candidate's stack: {total_topics}
-        - Topics already covered: {covered_topics}
-        - Remaining questions allowed in the interview: {remaining_questions}
-
         Evaluate the most recent exchange between the interviewer and the candidate:
         - Interviewer's question: "{assistant_message}"
         - Candidate's response: "{user_response}"
 
-        Based on this context, decide if the interview should end:
-        1. Respond with "Yes" if all relevant topics are sufficiently covered, or there are no more meaningful follow-up questions.
-        2. Respond with "No" if further questions are necessary to evaluate the candidate's expertise or if topics remain uncovered.
-        """}
-    ]
+        By considering the above conversation, 
+        - check if they are in the middle of any conversation
+        - did the interviewer has any pending question
+        - did the candidate has any pending answer
+    
+        based on the above should the interview be ended?
+        Provide the answer as 'yes' or 'no'
+        """}]
+        response = generate_openai_response(self.client, messages)
+        return response.content.strip().lower() == "yes"
 
-    # Call OpenAI API to evaluate the natural end
-    response = generate_openai_response(self.client, messages, self.function_schema, function_call="natural_end")
-    return response["should_end"]
-
+    
     def save_interview_record(self):
         """Save the complete interview record"""
         record = {
@@ -297,19 +261,18 @@ def main():
             with st.chat_message("assistant"):
                 st.write(assistant_response)
             
-            # Update chat history CONFUSION:     st.session_state.messages.append({"role": "assistant", "content": assistant_response})
+            # Update chat history
             st.session_state.messages.extend([
                 {"role": "user", "content": user_input},
                 {"role": "assistant", "content": assistant_response}
             ])
             
             # Check if interview should end
-            if st.session_state.assistant.check_natural_end():
+            if st.session_state.assistant.should_end_interview():
                 st.session_state.assistant.save_interview_record()
                 st.session_state.page = 'completion'
                 st.rerun()
-
-
+        
     # Completion Page
     elif st.session_state.page == 'completion':
         st.title("Interview Complete! 🎉")
