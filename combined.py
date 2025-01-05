@@ -51,6 +51,8 @@ class HiringAssistant:
         self.evaluation_notes = []
         self.topics_covered = set()
         self.candidate_info = None
+        self.follow_up_count = {}  # Track follow-up questions for each topic
+
         
     def save_candidate_info(self, info: CandidateInfo):
         """Save candidate information to JSON file"""
@@ -61,11 +63,14 @@ class HiringAssistant:
             json.dump(info.to_dict(), f, indent=2)
     
     def get_next_response(self, user_input=None):
-        """Get next assistant response based on conversation context"""
+        
+        total_questions_allowed = 4 * len(self.candidate_info.tech_stack)
+        remaining_questions = total_questions_allowed - len(self.conversation_history)
+
         messages = [
             {"role": "system", "content": f"""You are an AI technical interviewer conducting a screening interview for a {self.candidate_info.desired_position} position.
         The candidate has {self.candidate_info.experience} years of experience and expertise in: {', '.join(self.candidate_info.tech_stack)}.
-        
+        First you need to check if the expertise mentioned are relevant to the position, if else inform the candidate the same and move to next relevant skill
         Your task is to:
         1. Ask relevant technical questions about each technology in their stack, limiting follow-ups to 1-3 questions per topic.
         2. Ask follow-up questions based on their responses
@@ -74,6 +79,11 @@ class HiringAssistant:
         5. End the conversation gracefully once all topics are covered.
         6. Stay focused on technical assessment
         
+
+        Current constraints:
+        - Total questions allowed: {total_questions_allowed}
+        - Questions remaining: {remaining_questions}
+
         Guidelines:
         - Ask one question at a time
         - Follow up on interesting points in their answers
@@ -82,7 +92,7 @@ class HiringAssistant:
         - Be professional but friendly
         - Mark topics as covered when sufficiently discussed
         
-        Start by introducing yourself and asking the first technical question."""
+        Start by introducing yourself as AI technical interviewer and asking the first technical question."""
         }]
         
         # Add conversation history
@@ -102,7 +112,9 @@ class HiringAssistant:
         # Update topics covered
         for tech in self.candidate_info.tech_stack:
             if tech.lower() in user_input.lower() if user_input else False:
-                self.topics_covered.add(tech)
+                self.follow_up_count[tech] = self.follow_up_count.get(tech, 0) + 1
+                if self.follow_up_count[tech] >= 3:
+                    self.topics_covered.add(tech)
         
         return assistant_response
         
@@ -111,11 +123,34 @@ class HiringAssistant:
         """Determine if the interview should be concluded"""
         # Check if all topics have been covered
         all_topics_covered = all(tech in self.topics_covered for tech in self.candidate_info.tech_stack)
-        
+
         # Check conversation length
-        sufficient_conversation = len(self.conversation_history) >= 10
-        
-        return all_topics_covered and sufficient_conversation
+        max_conversation_length = 4 * len(self.candidate_info.tech_stack)
+        conversation_length_limit = len(self.conversation_history) >= max_conversation_length
+
+        # Check if near the end to trigger graceful wrap-up
+        if max_conversation_length - len(self.conversation_history) <= 3:
+            self.trigger_graceful_wrap_up = True
+
+        return all_topics_covered or conversation_length_limit
+    
+    def get_graceful_ending(self):
+
+        summary = "Here's a quick summary of our discussion:\n"
+        for tech in self.candidate_info.tech_stack:
+            if tech in self.topics_covered:
+                summary += f"- {tech}: Covered in detail.\n"
+            else:
+                summary += f"- {tech}: Partially discussed.\n"
+
+        closing_message = (
+            f"{summary}\n"
+            "Thank you for participating in this technical screening. "
+            "Our hiring team will review your responses, and you will hear from us shortly about the next steps. "
+            "Best of luck!"
+        )
+        return closing_message
+
 
     def save_interview_record(self):
         """Save the complete interview record"""
@@ -190,7 +225,7 @@ def main():
             full_name = st.text_input("Full Name*")
             email = st.text_input("Email Address*")
             phone = st.text_input("Phone Number*")
-            experience = st.number_input("Years of Experience*", min_value=0.0, step=0.5)
+            experience = st.number_input("Years of Experience*", min_value=0, step=0.5)
             desired_position = st.text_input("Desired Position*")
             location = st.text_input("Current Location*")
             tech_stack = st.text_input("Tech Stack (comma-separated list)*", 
@@ -252,10 +287,17 @@ def main():
             
             # Check if interview should end
             if st.session_state.assistant.should_end_interview():
-                st.session_state.assistant.save_interview_record()
-                st.session_state.page = 'completion'
-                st.rerun()
-        
+                if getattr(st.session_state.assistant, "trigger_graceful_wrap_up", False):
+                    # Generate and display the graceful ending message
+                    graceful_ending = st.session_state.assistant.get_graceful_ending()
+                    st.session_state.messages.append({"role": "assistant", "content": graceful_ending})
+                    st.chat_message("assistant").write(graceful_ending)
+                else:
+                    # Save the interview record and proceed to the completion page
+                    st.session_state.assistant.save_interview_record()
+                    st.session_state.page = 'completion'
+                    st.rerun()
+
     # Completion Page
     elif st.session_state.page == 'completion':
         st.title("Interview Complete! 🎉")
