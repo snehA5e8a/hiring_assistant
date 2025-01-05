@@ -1,3 +1,4 @@
+# app.py
 import streamlit as st
 from dataclasses import dataclass, asdict
 import json
@@ -6,12 +7,6 @@ from openai import OpenAI
 from typing import List, Dict, Optional
 import os
 from dotenv import load_dotenv
-
-# Load environment variables
-load_dotenv()
-api_key = os.getenv('OPENAI_API_KEY')
-
-client = OpenAI(api_key=api_key)
 
 
 @dataclass
@@ -27,17 +22,13 @@ class CandidateInfo:
     
     def to_dict(self):
         return asdict(self)
-
-def generate_openai_response(client: OpenAI, system_prompt, user_prompt, model='gpt-4o',temperature = 0.1, 
-                        functions = None, function_call= None, max_tokens = 1000):
-    messages = [{"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt}]
     
+def generate_openai_response(client, messages, model='gpt-4o-mini',temperature = 0.1, 
+                        functions = None, function_call= None):
     kwargs = {
         "model": model,
         "messages": messages,
-        'temperature': temperature,
-        'max_tokens' : max_tokens
+        'temperature': temperature
     }
     
     if functions:
@@ -51,35 +42,37 @@ def generate_openai_response(client: OpenAI, system_prompt, user_prompt, model='
     except Exception as e:
         print(f"Error in OpenAI API call: {e}")
         return None
-    
+
+
 class HiringAssistant:
-    def __init__(self, candidate_info):
-        self.candidate_info = candidate_info
+    def __init__(self, client):
+        self.client = client
         self.conversation_history = []
         self.evaluation_notes = []
-        self.current_topic = None
         self.topics_covered = set()
-        self.conversation_history = []
-        self.current_question_index = 0
+        self.candidate_info = None
         
     def save_candidate_info(self, info: CandidateInfo):
         """Save candidate information to JSON file"""
+        self.candidate_info = info
         filename = f"candidates/{info.email}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
         os.makedirs('candidates', exist_ok=True)
         with open(filename, 'w') as f:
             json.dump(info.to_dict(), f, indent=2)
-            
-    def generate_initial_prompt(self) -> str:
-        """Generate the system prompt based on candidate information"""
-        return f"""You are an AI technical interviewer conducting a screening interview for a {self.candidate_info['desired_position']} position.
-        The candidate has {self.candidate_info['experience']} years of experience and expertise in: {', '.join(self.candidate_info['tech_stack'])}.
+    
+    def get_next_response(self, user_input=None):
+        """Get next assistant response based on conversation context"""
+        messages = [
+            {"role": "system", "content": f"""You are an AI technical interviewer conducting a screening interview for a {self.candidate_info.desired_position} position.
+        The candidate has {self.candidate_info.experience} years of experience and expertise in: {', '.join(self.candidate_info.tech_stack)}.
         
         Your task is to:
-        1. Ask relevant technical questions about each technology in their stack
+        1. Ask relevant technical questions about each technology in their stack, limiting follow-ups to 1-3 questions per topic.
         2. Ask follow-up questions based on their responses
-        3. Maintain conversation context
+        3. Transition to the next topic once follow-ups are exhausted or answers are complete.
         4. Keep track of topics covered
-        5. Stay focused on technical assessment
+        5. End the conversation gracefully once all topics are covered.
+        6. Stay focused on technical assessment
         
         Guidelines:
         - Ask one question at a time
@@ -90,13 +83,7 @@ class HiringAssistant:
         - Mark topics as covered when sufficiently discussed
         
         Start by introducing yourself and asking the first technical question."""
-    
-        
-    def get_next_response(self, user_input: str = None) -> str:
-        """Get next assistant response based on conversation context"""
-        messages = [
-            {"role": "system", "content": self.generate_initial_prompt()}
-        ]
+        }]
         
         # Add conversation history
         for msg in self.conversation_history:
@@ -107,27 +94,23 @@ class HiringAssistant:
             messages.append({"role": "user", "content": user_input})
             self.conversation_history.append({"role": "user", "content": user_input})
         
+    
+        response = generate_openai_response(self.client, messages)
+        assistant_response = response.content
+        self.conversation_history.append({"role": "assistant", "content": assistant_response})
         
-
-        try:
-            response = generate_openai_response(client,messages)
-            assistant_response = response.content if response else "No reply generated due to an error." 
-            self.conversation_history.append({"role": "assistant", "content": assistant_response})
-            
-            # Update topics covered (simplified version)
-            for tech in self.candidate_info['tech_stack']:
-                if tech.lower() in user_input.lower() if user_input else False:
-                    self.topics_covered.add(tech)
-            
-            return assistant_response
-            
-        except Exception as e:
-            return "I apologize for the technical difficulty. Could you please rephrase your response or let me ask another question?"
-
-    def should_end_interview(self) -> bool:
+        # Update topics covered
+        for tech in self.candidate_info.tech_stack:
+            if tech.lower() in user_input.lower() if user_input else False:
+                self.topics_covered.add(tech)
+        
+        return assistant_response
+        
+        
+    def should_end_interview(self):
         """Determine if the interview should be concluded"""
         # Check if all topics have been covered
-        all_topics_covered = all(tech in self.topics_covered for tech in self.candidate_info['tech_stack'])
+        all_topics_covered = all(tech in self.topics_covered for tech in self.candidate_info.tech_stack)
         
         # Check conversation length
         sufficient_conversation = len(self.conversation_history) >= 10
@@ -137,19 +120,24 @@ class HiringAssistant:
     def save_interview_record(self):
         """Save the complete interview record"""
         record = {
-            "candidate_info": self.candidate_info,
+            "candidate_info": self.candidate_info.to_dict(),
             "conversation_history": self.conversation_history,
             "topics_covered": list(self.topics_covered),
             "timestamp": datetime.now().isoformat()
         }
         
-        filename = f"interviews/{self.candidate_info['email']}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+        filename = f"interviews/{self.candidate_info.email}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
         os.makedirs('interviews', exist_ok=True)
         with open(filename, 'w') as f:
             json.dump(record, f, indent=2)
-    
-    
+
 def main():
+
+    # Configure OpenAI
+    load_dotenv()
+    api_key = os.getenv("OPENAI_API_KEY")
+    client = OpenAI(api_key=api_key)
+    
     st.set_page_config(
         page_title="TalentScout Hiring Assistant",
         page_icon="👋",
@@ -160,13 +148,9 @@ def main():
     if 'page' not in st.session_state:
         st.session_state.page = 'welcome'
     if 'assistant' not in st.session_state:
-        st.session_state.assistant = HiringAssistant()
-    if 'candidate_info' not in st.session_state:
-        st.session_state.candidate_info = None
-    if 'questions' not in st.session_state:
-        st.session_state.questions = []
-    if 'current_question' not in st.session_state:
-        st.session_state.current_question = 0
+        st.session_state.assistant = HiringAssistant(client)
+    if 'messages' not in st.session_state:
+        st.session_state.messages = []
     
     # Welcome Page
     if st.session_state.page == 'welcome':
@@ -176,7 +160,7 @@ def main():
         Hello! I'm your AI Hiring Assistant, and I'll be conducting your initial screening interview.
         
         This process will involve:
-        1. Collecting some basic information about you
+        1. Collecting your name, email id, mobile number, professional information
         2. Understanding your technical expertise
         3. Asking relevant screening questions
         
@@ -228,14 +212,10 @@ def main():
                         consent_timestamp=datetime.now().isoformat()
                     )
                     
+                    # Save candidate info and initialize chat
                     st.session_state.assistant.save_candidate_info(candidate_info)
-                    st.session_state.candidate_info = candidate_info
-                    
-                    # Generate screening questions
-                    st.session_state.questions = st.session_state.assistant.generate_screening_questions(
-                        desired_position,
-                        candidate_info.tech_stack
-                    )
+                    initial_response = st.session_state.assistant.get_next_response()
+                    st.session_state.messages = [{"role": "assistant", "content": initial_response}]
                     
                     st.session_state.page = 'screening'
                     st.rerun()
@@ -244,31 +224,37 @@ def main():
     
     # Screening Page
     elif st.session_state.page == 'screening':
-        st.title("Technical Screening")
+        st.title("Technical Screening Interview")
         
-        if st.session_state.current_question < len(st.session_state.questions):
-            current_q = st.session_state.questions[st.session_state.current_question]
-            st.write(f"Question {st.session_state.current_question + 1}:")
-            st.write(current_q)
+        # Display chat history
+        for message in st.session_state.messages:
+            with st.chat_message(message["role"]):
+                st.write(message["content"])
+        
+        # Chat input
+        if user_input := st.chat_input("Your response..."):
+            # Display user message
+            with st.chat_message("user"):
+                st.write(user_input)
             
-            answer = st.text_area("Your Answer")
+            # Get assistant response
+            assistant_response = st.session_state.assistant.get_next_response(user_input)
             
-            if st.button("Submit Answer"):
-                if answer.strip():
-                    # Evaluate response
-                    feedback = st.session_state.assistant.evaluate_response(current_q, answer)
-                    st.write("Feedback:")
-                    st.write(feedback)
-                    
-                    st.session_state.current_question += 1
-                    if st.session_state.current_question < len(st.session_state.questions):
-                        if st.button("Next Question"):
-                            st.rerun()
-                    else:
-                        st.session_state.page = 'completion'
-                        st.rerun()
-                else:
-                    st.error("Please provide an answer before proceeding.")
+            # Display assistant response
+            with st.chat_message("assistant"):
+                st.write(assistant_response)
+            
+            # Update chat history
+            st.session_state.messages.extend([
+                {"role": "user", "content": user_input},
+                {"role": "assistant", "content": assistant_response}
+            ])
+            
+            # Check if interview should end
+            if st.session_state.assistant.should_end_interview():
+                st.session_state.assistant.save_interview_record()
+                st.session_state.page = 'completion'
+                st.rerun()
         
     # Completion Page
     elif st.session_state.page == 'completion':
