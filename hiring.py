@@ -7,14 +7,14 @@ from typing import List, Dict, Optional
 import os
 from dotenv import load_dotenv
 import glob
-
+import re
 
 @dataclass
 class CandidateInfo:
     full_name: str
     email: str
     phone: str
-    experience: float
+    experience: str
     desired_position: str
     location: str
     tech_stack: List[str]
@@ -47,7 +47,6 @@ class HiringAssistant:
     def __init__(self, client):
         self.client = client
         self.conversation_history = []
-        self.evaluation_notes = []
         self.topics_covered = set()
         self.candidate_info = None
         
@@ -161,6 +160,16 @@ class HiringAssistant:
         
         with open(latest_file, 'w') as f:
             json.dump(interview_data, f, indent=2)
+
+def validate_inputs(full_name, email, phone, desired_position, location, tech_stack):
+    """Validate all form inputs."""
+    if not all([full_name, email, phone, desired_position, location, tech_stack]):
+        return False, "Please fill in all required fields."
+    if not re.match(r"[^@]+@[^@]+\.[^@]+", email):
+        return False, "Invalid email address. Please enter a valid email."
+    if not re.match(r"^\d{10}$", phone):
+        return False, "Invalid phone number. Please enter a valid 10-digit phone number."
+    return True, ""
 
 def analyze_sentiment(client, conversation_history):
     """Analyze the sentiment of interview responses"""
@@ -285,7 +294,11 @@ def main():
             full_name = st.text_input("Full Name*")
             email = st.text_input("Email Address*")
             phone = st.text_input("Phone Number*")
-            experience = st.number_input("Years of Experience*", min_value=0.0, step=0.5)
+            col1, col2 = st.columns(2)
+            with col1:
+                experience_years = st.number_input("Years of Experience*", min_value=0, step=1, format="%d")
+            with col2:
+                experience_months = st.number_input("Months of Experience*", min_value=0, max_value=11, step=1, format="%d")
             desired_position = st.text_input("Desired Position*")
             location = st.text_input("Current Location*")
             tech_stack = st.text_input("Tech Stack (comma-separated list)*", 
@@ -294,28 +307,29 @@ def main():
             submit_button = st.form_submit_button("Submit")
             
             if submit_button:
-                if all([full_name, email, phone, experience, desired_position, location, tech_stack]):
-                    # Create and save candidate info
+                experience = f"{experience_years} years, {experience_months} months"
+                # Validate required fields
+                is_valid, error_message = validate_inputs(full_name, email, phone, desired_position, location, tech_stack)
+                if is_valid:
                     candidate_info = CandidateInfo(
-                        full_name=full_name,
-                        email=email,
-                        phone=phone,
-                        experience=experience,
-                        desired_position=desired_position,
-                        location=location,
-                        tech_stack=[tech.strip() for tech in tech_stack.split(',')],
-                        consent_timestamp=datetime.now().isoformat()
-                    )
-                    
+                            full_name=full_name,
+                            email=email,
+                            phone=phone,
+                            experience=experience,
+                            desired_position=desired_position,
+                            location=location,
+                            tech_stack=[tech.strip() for tech in tech_stack.split(',')],
+                            consent_timestamp=datetime.now().isoformat()
+                        )
+                        
                     # Save candidate info and initialize chat
                     st.session_state.assistant.save_candidate_info(candidate_info)
                     initial_response = st.session_state.assistant.get_next_response()
                     st.session_state.messages = [{"role": "assistant", "content": initial_response}]
-                    
                     st.session_state.page = 'screening'
                     st.rerun()
                 else:
-                    st.error("Please fill in all required fields.")
+                    st.error(error_message)
     
     # Screening Page
     elif st.session_state.page == 'screening':
