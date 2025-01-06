@@ -95,7 +95,7 @@ class HiringAssistant:
             self.conversation_history.append({"role": "user", "content": user_input})
         
     
-        response = generate_openai_response(self.client, messages)
+        response = generate_openai_response(self.client, messages, model='gpt-4o-mini')
         assistant_response = response.content
         self.conversation_history.append({"role": "assistant", "content": assistant_response})
         
@@ -173,14 +173,18 @@ def validate_inputs(full_name, email, phone, desired_position, location, tech_st
 
 def analyze_sentiment(client, conversation_history):
     """Analyze the sentiment of interview responses"""
-    # Filter for candidate responses only
-    candidate_responses = [msg["content"] for msg in conversation_history if msg["role"] == "user"]
     
     messages = [
-        {"role": "system", "content": "Analyze the interview responses and provide a sentiment analysis."},
-        {"role": "user", "content": f"Analyze these interview responses: {' '.join(candidate_responses)}"}
-    ]
-    
+    {"role": "system", "content": "You are an AI that analyzes interview responses to provide structured sentiment analysis."},
+    {"role": "user", "content": (
+        "You will analyze the following interview conversation and provide the sentiment analysis. "
+        "Consider the candidate's responses, tone, and engagement during the interview. "
+        "Evaluate their strengths, areas for improvement, and scores for technical confidence and communication. "
+        "If the responses are minimal or vague, note this explicitly in your analysis. "
+        "Here is the conversation: " + f"{conversation_history}"
+    )}
+]
+
     response = client.chat.completions.create(
         model="gpt-4o-mini",
         messages=messages,
@@ -215,13 +219,13 @@ def analyze_sentiment(client, conversation_history):
                         "maximum": 10
                     }
                 },
-                "required": ["overall_sentiment", "key_strengths", "areas_for_improvement", 
-                           "technical_confidence_score", "communication_score"]
+                "required": ["overall_sentiment", "key_strengths", "areas_for_improvement",
+                            "technical_confidence_score", "communication_score"]
             }
         }],
         function_call={"name": "create_sentiment_analysis"}
     )
-    
+
     return response.choices[0].message.function_call.arguments
 
 def main():
@@ -365,7 +369,7 @@ def main():
         
         # Show end interview confirmation if in ending state
         if st.session_state.interview_ending:
-            st.write("Would you like to end the interview now?")
+            st.write("Would you like to end the interview now? Or do you have more questions or answers?")
             col1, col2 = st.columns(2)
             with col1:
                 if st.button("Yes, End Interview", key="end_button"):
