@@ -6,6 +6,7 @@ from openai import OpenAI
 from typing import List, Dict, Optional
 import os
 from dotenv import load_dotenv
+import glob
 
 
 @dataclass
@@ -146,6 +147,73 @@ class HiringAssistant:
         os.makedirs('interviews', exist_ok=True)
         with open(filename, 'w') as f:
             json.dump(record, f, indent=2)
+
+    def add_sentiment_analysis(self, client):
+        analysis = analyze_sentiment(client, self.conversation_history)
+        
+        # Update the latest interview file with sentiment analysis
+        latest_file = max(glob.glob('interviews/*.json'), key=os.path.getctime)
+        with open(latest_file, 'r') as f:
+            interview_data = json.load(f)
+        
+        # analysis is already JSON string, no need to load it
+        interview_data['sentiment_analysis'] = json.loads(analysis)
+        
+        with open(latest_file, 'w') as f:
+            json.dump(interview_data, f, indent=2)
+
+def analyze_sentiment(client, conversation_history):
+    """Analyze the sentiment of interview responses"""
+    # Filter for candidate responses only
+    candidate_responses = [msg["content"] for msg in conversation_history if msg["role"] == "user"]
+    
+    messages = [
+        {"role": "system", "content": "Analyze the interview responses and provide a sentiment analysis."},
+        {"role": "user", "content": f"Analyze these interview responses: {' '.join(candidate_responses)}"}
+    ]
+    
+    response = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=messages,
+        functions=[{
+            "name": "create_sentiment_analysis",
+            "description": "Create a structured sentiment analysis from the interview",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "overall_sentiment": {
+                        "type": "string",
+                        "enum": ["positive", "neutral", "negative"]
+                    },
+                    "key_strengths": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "maxItems": 3
+                    },
+                    "areas_for_improvement": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "maxItems": 3
+                    },
+                    "technical_confidence_score": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 10
+                    },
+                    "communication_score": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 10
+                    }
+                },
+                "required": ["overall_sentiment", "key_strengths", "areas_for_improvement", 
+                           "technical_confidence_score", "communication_score"]
+            }
+        }],
+        function_call={"name": "create_sentiment_analysis"}
+    )
+    
+    return response.choices[0].message.function_call.arguments
 
 def main():
 
@@ -288,6 +356,7 @@ def main():
             with col1:
                 if st.button("Yes, End Interview", key="end_button"):
                     st.session_state.assistant.save_interview_record()
+                    st.session_state.assistant.add_sentiment_analysis(client)
                     change_page('completion')
                     st.rerun()
             with col2:
@@ -312,5 +381,4 @@ def main():
         st.balloons()
 
 if __name__ == "__main__":    
-    st.server.listen(port=8080)
     main()
