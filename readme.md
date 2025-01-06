@@ -125,3 +125,4 @@ The sentiment analyzer evaluates:
 - Modularisation, better error handling
 - Multi lingual support
 - Performance optimization
+- Page transitions from web
