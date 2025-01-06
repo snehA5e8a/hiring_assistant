@@ -42,7 +42,6 @@ def generate_openai_response(client, messages, model='gpt-4o-mini',temperature =
         print(f"Error in OpenAI API call: {e}")
         return None
 
-
 class HiringAssistant:
     def __init__(self, client):
         self.client = client
@@ -169,6 +168,17 @@ def main():
     if 'messages' not in st.session_state:
         st.session_state.messages = []
     
+    def change_page(new_page):
+        st.session_state.page = new_page
+        # Clear interview-specific states when leaving screening page
+        if new_page == 'completion':
+            if 'messages' in st.session_state:
+                del st.session_state.messages
+            if 'interview_ending' in st.session_state:
+                del st.session_state.interview_ending
+            if 'chat_disabled' in st.session_state:
+                del st.session_state.chat_disabled
+
     # Welcome Page
     if st.session_state.page == 'welcome':
         st.title("Welcome to TalentScout! 👋")
@@ -243,40 +253,51 @@ def main():
     elif st.session_state.page == 'screening':
         st.title("Technical Screening Interview")
         
+        if 'interview_ending' not in st.session_state:
+            st.session_state.interview_ending = False
+        
         # Display chat history
         for message in st.session_state.messages:
             with st.chat_message(message["role"]):
                 st.write(message["content"])
         
-        # Chat input
-        if user_input := st.chat_input("Your response..."):
-            # Display user message
-            with st.chat_message("user"):
-                st.write(user_input)
-            
-            # Get assistant response
-            assistant_response = st.session_state.assistant.get_next_response(user_input)
-            
-            # Display assistant response
-            with st.chat_message("assistant"):
-                st.write(assistant_response)
-            
-            # Update chat history
-            st.session_state.messages.extend([
-                {"role": "user", "content": user_input},
-                {"role": "assistant", "content": assistant_response}
-            ])
-            
-            # Check if interview should end
-            if st.session_state.assistant.should_end_interview():
-                st.session_state.assistant.save_interview_record()
-                st.session_state.page = 'completion'
-                st.rerun()
+        # Only show chat input and handle messages if not in ending state
+        if not st.session_state.interview_ending:
+            if user_input := st.chat_input("Your response..."):
+                with st.chat_message("user"):
+                    st.write(user_input)
+                
+                assistant_response = st.session_state.assistant.get_next_response(user_input)
+                
+                with st.chat_message("assistant"):
+                    st.write(assistant_response)
+                
+                st.session_state.messages.extend([
+                    {"role": "user", "content": user_input},
+                    {"role": "assistant", "content": assistant_response}
+                ])
+                
+                if st.session_state.assistant.should_end_interview():
+                    st.session_state.interview_ending = True
+                    st.rerun()
         
+        # Show end interview confirmation if in ending state
+        if st.session_state.interview_ending:
+            st.write("Would you like to end the interview now?")
+            col1, col2 = st.columns(2)
+            with col1:
+                if st.button("Yes, End Interview", key="end_button"):
+                    st.session_state.assistant.save_interview_record()
+                    change_page('completion')
+                    st.rerun()
+            with col2:
+                if st.button("No, Continue Chat", key="continue_button"):
+                    st.session_state.interview_ending = False
+                    st.rerun()
     # Completion Page
-    elif st.session_state.page == 'completion':
+    elif st.session_state.page == 'completion':        
         st.title("Interview Complete! 🎉")
-        
+
         st.markdown("""
         Thank you for completing the initial screening interview! Here's what happens next:
 
@@ -288,6 +309,6 @@ def main():
 
         Best of luck with your application! 👋
         """)
-
+        st.balloons()
 if __name__ == "__main__":
     main()
