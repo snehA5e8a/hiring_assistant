@@ -4,3 +4,4 @@ venv/
 candidates
 extra
 interviews
+__pycache__
