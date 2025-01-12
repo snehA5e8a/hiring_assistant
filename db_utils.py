@@ -39,9 +39,11 @@ class DatabaseMan:
         CREATE_CANDIDATES_TABLE = """
         CREATE TABLE IF NOT EXISTS candidates (
             id SERIAL PRIMARY KEY,
+            user_id INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
             full_name VARCHAR(100) NOT NULL,
             email VARCHAR(100) UNIQUE NOT NULL,
             phone VARCHAR(15),
+            education VARCHAR(50),
             experience VARCHAR(50),
             desired_position VARCHAR(50),
             location VARCHAR(100),
@@ -52,11 +54,11 @@ class DatabaseMan:
         CREATE_INTERVIEWS_TABLE = """
         CREATE TABLE IF NOT EXISTS interviews (
             id SERIAL PRIMARY KEY,
-            candidate_id INT NOT NULL,
+            user_id INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            candidate_id INT NOT NULL REFERENCES candidates(id) ON DELETE CASCADE,
             conversation_history JSONB,
             topics_covered TEXT[],
-            timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (candidate_id) REFERENCES candidates (id) ON DELETE CASCADE
+            timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
         """
         self.cursor.execute(CREATE_USERS_TABLE)
@@ -72,8 +74,23 @@ class DatabaseMan:
         """
         self.cursor.execute(query, (username, hashed_password, role))
         self.conn.commit()
+        return self.cursor.fetchone()[0]  # Return user ID
 
     
+    def login_user(self, username, password):
+        """Verify the user credentials."""
+        query = "SELECT password, role, id FROM users WHERE username = %s"
+        self.cursor.execute(query, (username,))
+        result = self.cursor.fetchone()
+        
+        if result:
+            stored_password, role, user_id = result
+            if verify_password(password, stored_password):
+                return user_id, role
+            else:
+                return False, None
+        else:
+            return False, None
 
     def save_candidate(self, full_name, email, phone, experience, desired_position, location, tech_stack, consent_timestamp):
         query = """

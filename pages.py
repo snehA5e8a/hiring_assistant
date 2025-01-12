@@ -14,8 +14,9 @@ def login_page(db_manager):
         username = st.text_input("Username", key="login_username")
         password = st.text_input("Password", type="password", key="login_password")
         if st.button("Login"):
-            is_authenticated, role = db_manager.login_user(username, password)
+            is_authenticated, role, user_id = db_manager.login_user(username, password)
             if is_authenticated:
+                st.session_state['user'] = {'username': username, 'role': role, 'user_id': user_id}
                 st.success(f"Welcome {username}! Redirecting to the welcome page...")
                 st.session_state['user'] = {'username': username, 'role': role}
                 st.session_state.page = 'welcome'
@@ -37,7 +38,7 @@ def login_page(db_manager):
                 try:
                     db_manager.register_user(username, password, role)
                     st.success("User registered successfully! ")
-                    st.session_state['user'] = {'username': username, 'role': role}
+                    st.session_state['user'] = {'username': username, 'role': role, user_id: user_id}
                     st.session_state.page = 'welcome'   
                     st.rerun()
                 except Exception as e:
@@ -79,6 +80,7 @@ def render_collect_info(db_manager):
         full_name = st.text_input("Full Name*")
         email = st.text_input("Email Address*")
         phone = st.text_input("Phone Number*")
+        education = st.text_input("Education*", help="Example: Bachelor's in Computer Science")
         col1, col2 = st.columns(2)
         with col1:
             experience_years = st.number_input("Years of Experience*", min_value=0, step=1, format="%d")
