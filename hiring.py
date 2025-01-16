@@ -10,14 +10,17 @@ class HiringAssistant:
     def __init__(self, client):
         self.client = client
         self.conversation_history = []
-        self.topics_covered = set()
-        self.candidate_info = None
+        self.candidate_info = {'experience_years': 0,
+                                'experience_months': 0,
+                                'desired_position': "", 
+                                'tech_stack': []
+                                }
     
     def get_next_response(self, user_input=None):
         
         messages = [
-            {"role": "system", "content": f"""You are an AI technical interviewer conducting a screening interview for a {self.candidate_info.desired_position} position.
-        The candidate has {self.candidate_info.experience_years} years and {self.candidate_info.experience_months} months of experience and expertise in: {', '.join(self.candidate_info.tech_stack)}.
+            {"role": "system", "content": f"""You are an AI technical interviewer conducting a screening interview for a {self.candidate_info['desired_position']} position.
+        The candidate has {self.candidate_info['experience_years']} years and {self.candidate_info['experience_months']} months of experience and expertise in: {', '.join(self.candidate_info['tech_stack'])}.
         First you need to check if the expertise mentioned are relevant to the position, it may be some random words.
         If not a relevant skill, inform the candidate the same and move to next relevant skill
 
@@ -54,11 +57,6 @@ class HiringAssistant:
         assistant_response = response.content
         self.conversation_history.append({"role": "assistant", "content": assistant_response})
         
-        # Update topics covered
-        for tech in self.candidate_info.tech_stack:
-            if tech.lower() in user_input.lower() if user_input else False:
-                self.topics_covered.add(tech)
-        
         return assistant_response
              
     def should_end_interview(self):
@@ -66,6 +64,7 @@ class HiringAssistant:
             return False  # Not enough data to evaluate
         assistant_message = self.conversation_history[-2]["content"]
         user_response = self.conversation_history[-1]["content"]
+        print('assistant msg:',assistant_message, 'user response:', user_response) #debugging
 
         # Take the latest assistant message and user: pass and see if its the last one, if flag is set, return True
         messages = [
@@ -84,35 +83,71 @@ class HiringAssistant:
         Provide the answer as 'yes' or 'no'
         """}]
         response = utils.generate_openai_response(self.client, messages)
+        print(response.content) #debugging
         return response.content.strip().lower() == "yes"
   
-    def save_interview_record(self):
-        """Save the complete interview record"""
-        record = {
-            "candidate_info": self.candidate_info.to_dict(),
-            "conversation_history": self.conversation_history,
-            "topics_covered": list(self.topics_covered),
-            "timestamp": datetime.now().isoformat()
-        }
+    def analyze_sentiment(self):
+        """Analyze the sentiment of interview responses"""
         
-        filename = f"interviews/{self.candidate_info.email}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
-        os.makedirs('interviews', exist_ok=True)
-        with open(filename, 'w') as f:
-            json.dump(record, f, indent=2)
+        messages = [
+        {"role": "system", "content": "You are an AI that analyzes interview responses to provide structured sentiment analysis."},
+        {"role": "user", "content": (
+            "You will analyze the following interview conversation and provide the sentiment analysis. "
+            "Consider the candidate's responses, tone, and engagement during the interview. "
+            "Evaluate their strengths, areas for improvement, and scores for technical confidence and communication. "
+            "If the responses are minimal or vague, note this explicitly in your analysis. "
+            "Also check if the answers are human generated or AI generated."
+            "Here is the conversation: " + f"{self.conversation_history}"
+        )}
+        ]
 
-    def add_sentiment_analysis(self, client):
-        analysis = utils.analyze_sentiment(client, self.conversation_history)
-        
-        # Update the latest interview file with sentiment analysis
-        latest_file = max(glob.glob('interviews/*.json'), key=os.path.getctime)
-        with open(latest_file, 'r') as f:
-            interview_data = json.load(f)
-        
-        # analysis is already JSON string, no need to load it
-        interview_data['sentiment_analysis'] = json.loads(analysis)
-        
-        with open(latest_file, 'w') as f:
-            json.dump(interview_data, f, indent=2)
+        response = self.client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=messages,
+            functions=[{
+                "name": "create_sentiment_analysis",
+                "description": "Create a structured sentiment analysis from the interview",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "overall_sentiment": {
+                            "type": "string",
+                            "enum": ["positive", "neutral", "negative"]
+                        },
+                        "key_strengths": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "maxItems": 3
+                        },
+                        "areas_for_improvement": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "maxItems": 3
+                        },
+                        "technical_confidence_score": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 10
+                        },
+                        "conversation_authenticity_score": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 10
+                        },
+                        "communication_score": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 10
+                        }
+                    },
+                    "required": ["overall_sentiment", "key_strengths", "areas_for_improvement",
+                                "technical_confidence_score","conversation_authenticity_score" "communication_score"]
+                }
+            }],
+            function_call={"name": "create_sentiment_analysis"}
+        )
+        response_data = json.loads(response.choices[0].message.function_call.arguments)
+        return response_data
 
 db_manager = DatabaseMan()
 
@@ -140,10 +175,10 @@ def main():
         pages.render_welcome(db_manager)
     elif st.session_state.page == 'collect_info':
         pages.render_collect_info(db_manager)
-    elif st.session_state.page == 'screening':
-        pages.render_screening(client, db_manager)
+    elif st.session_state.page == 'interview':
+        pages.render_interview(client, db_manager)
     elif st.session_state.page == 'completion':
-        pages.render_completion(db_manager)      
+        pages.render_completion()      
         
 if __name__ == "__main__":    
     main()

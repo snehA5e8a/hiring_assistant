@@ -46,7 +46,8 @@ class CandidateInfo:
     full_name: str
     email: str
     phone: str
-    experience: str
+    experience_years: int
+    experience_months: int
     desired_position: str
     location: str
     tech_stack: List[str]
@@ -55,59 +56,4 @@ class CandidateInfo:
     def to_dict(self):
         return asdict(self)
 
-def analyze_sentiment(client, conversation_history):
-    """Analyze the sentiment of interview responses"""
     
-    messages = [
-    {"role": "system", "content": "You are an AI that analyzes interview responses to provide structured sentiment analysis."},
-    {"role": "user", "content": (
-        "You will analyze the following interview conversation and provide the sentiment analysis. "
-        "Consider the candidate's responses, tone, and engagement during the interview. "
-        "Evaluate their strengths, areas for improvement, and scores for technical confidence and communication. "
-        "If the responses are minimal or vague, note this explicitly in your analysis. "
-        "Here is the conversation: " + f"{conversation_history}"
-    )}
-]
-
-    response = client.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=messages,
-        functions=[{
-            "name": "create_sentiment_analysis",
-            "description": "Create a structured sentiment analysis from the interview",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "overall_sentiment": {
-                        "type": "string",
-                        "enum": ["positive", "neutral", "negative"]
-                    },
-                    "key_strengths": {
-                        "type": "array",
-                        "items": {"type": "string"},
-                        "maxItems": 3
-                    },
-                    "areas_for_improvement": {
-                        "type": "array",
-                        "items": {"type": "string"},
-                        "maxItems": 3
-                    },
-                    "technical_confidence_score": {
-                        "type": "integer",
-                        "minimum": 0,
-                        "maximum": 10
-                    },
-                    "communication_score": {
-                        "type": "integer",
-                        "minimum": 0,
-                        "maximum": 10
-                    }
-                },
-                "required": ["overall_sentiment", "key_strengths", "areas_for_improvement",
-                            "technical_confidence_score", "communication_score"]
-            }
-        }],
-        function_call={"name": "create_sentiment_analysis"}
-    )
-
-    return response.choices[0].message.function_call.arguments

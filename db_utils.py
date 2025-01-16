@@ -1,7 +1,10 @@
 import psycopg2
 from dotenv import load_dotenv
 import os
+import json
 import bcrypt
+from psycopg2.extras import Json
+
 
 # Load environment variables
 load_dotenv()
@@ -56,9 +59,7 @@ class DatabaseMan:
         CREATE TABLE IF NOT EXISTS interviews (
             id SERIAL PRIMARY KEY,
             user_id INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-            candidate_id INT NOT NULL REFERENCES candidates(id) ON DELETE CASCADE,
             conversation_history JSONB,
-            topics_covered TEXT[],
             timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
         """
@@ -103,28 +104,37 @@ class DatabaseMan:
         else:
             return False, None, None
 
-    def save_candidate(self, **candidate_data):
+    def save_candidate(self, user_id, candidate_data):
+        """
+        Save candidate information and link it to the users table via the user_id foreign key.
+        """
         query = """
-        INSERT INTO candidates (full_name, email, phone, experience_years, experience_months, desired_position, location, tech_stack, consent_timestamp)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+        INSERT INTO candidates (user_id, full_name, email, phone, education, experience_years, experience_months, desired_position, location, tech_stack, consent_timestamp)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         RETURNING id;
         """
-        values = (
-        candidate_data['full_name'],
-        candidate_data['email'],
-        candidate_data['phone'],
-        candidate_data['education'],
-        candidate_data['experience_years'],
-        candidate_data['experience_months'],
-        candidate_data['desired_position'],
-        candidate_data['location'],
-        candidate_data['tech_stack'],
-        candidate_data['consent_timestamp'],
-    )
 
+        # Prepare the values for insertion, including the user_id
+        values = (
+            user_id,  # Link the candidate to the user via user_id
+            candidate_data['full_name'],
+            candidate_data['email'],
+            candidate_data.get('phone', None),
+            candidate_data.get('education', None),
+            candidate_data.get('experience_years', 0),
+            candidate_data.get('experience_months', 0),
+            candidate_data.get('desired_position', None),
+            candidate_data.get('location', None),
+            candidate_data.get('tech_stack', []),
+            candidate_data.get('consent_timestamp', None)
+        )
+
+        # Execute the query and commit the transaction
         self.cursor.execute(query, values)
         self.conn.commit()
-        return self.cursor.fetchone()[0]  # Return candidate ID
+
+        # Return the id of the newly created candidate
+        return self.cursor.fetchone()[0]  # This will return the newly inserted candidate's id
 
     def execute_query(self, query, params=None):
         """Execute a query with optional parameters."""
@@ -173,11 +183,12 @@ class DatabaseMan:
         query = f"""
             SELECT {column_query}
             FROM candidates
-            WHERE id = %s
+            WHERE user_id = %s
         """
         self.cursor.execute(query, (user_id,))
         result = self.cursor.fetchone()
-
+        if not result:
+            return False
         user_info = default_columns.copy()
 
         if result:
@@ -194,7 +205,7 @@ class DatabaseMan:
         UPDATE candidates
         SET full_name = %s, email = %s, phone = %s, education = %s, 
             experience_years = %s, experience_months=%s, desired_position = %s, location = %s, tech_stack = %s, consent_timestamp = %s
-        WHERE id = %s
+        WHERE user_id = %s
         """
         self.cursor.execute(
             query,
@@ -222,6 +233,40 @@ class DatabaseMan:
         self.cursor.execute(query, (user_id,))
         self.conn.commit()
 
+    def save_conversation_to_db(self, user_id, conversation_history, sentiment_data):
+        try:
+            if isinstance(sentiment_data, str):
+                sentiment_data = json.loads(sentiment_data)
+
+            # Insert conversation history and evaluation data into the interviews table
+            insert_query = """
+            INSERT INTO interviews (user_id, conversation_history, overall_sentiment, key_strengths, 
+                                areas_for_improvement, technical_confidence_score, 
+                                conversation_authenticity_score, communication_score)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            """
+            
+            self.cursor.execute(insert_query, (
+                user_id, 
+                Json(conversation_history),
+                sentiment_data.get('overall_sentiment'),
+                sentiment_data.get('key_strengths'),
+                sentiment_data.get('areas_for_improvement'),
+                sentiment_data.get('technical_confidence_score'),
+                sentiment_data.get('conversation_authenticity_score'),
+                sentiment_data.get('communication_score')
+            ))
+            
+            # Commit the transaction
+            self.conn.commit()
+            print("Conversation and evaluation saved successfully.") # debugging
+        except Exception as e:
+            print(f"Error saving conversation and evaluation: {e}") # debugging
+            self.conn.rollback()
+        finally:
+            self.cursor.close()
+            self.conn.close()
+    
     def fetch_one(self, query, params=None):
         """Fetch a single record."""
         self.cursor.execute(query, params)

@@ -82,7 +82,6 @@ def render_welcome(db_manager):
             st.rerun()
 
 def render_collect_info(db_manager):
-    st.title("Let's Get to Know You")
 
     # Fetch existing user data
     user_id = st.session_state['user']['user_id']
@@ -128,6 +127,15 @@ def render_collect_info(db_manager):
                 }
                 db_manager.update_candidate_info(user_id, updated_info)
                 st.success("Your information has been updated!")
+                st.session_state.assistant.candidate_info = {
+                    "experience_years": updated_info["experience_years"],
+                    "experience_months": updated_info["experience_months"],
+                    "desired_position": updated_info["desired_position"],
+                    "tech_stack": updated_info['tech_stack']
+                }
+                initial_response = st.session_state.assistant.get_next_response()
+                st.session_state.messages = [{"role": "assistant", "content": initial_response}]
+                st.session_state.page = 'interview'
                 st.rerun()
             else:
                 st.error(error_message)
@@ -161,38 +169,43 @@ def render_collect_info(db_manager):
                 # Validate required fields
                 is_valid, error_message = utils.validate_inputs(full_name, email, phone, desired_position, location, tech_stack)
                 if is_valid:
-                    candidate_info = utils.CandidateInfo(
-                            full_name=full_name,
-                            email=email,
-                            phone=phone,
-                            experience_years=experience_years,
-                            experience_months=experience_months,
-                            desired_position=desired_position,
-                            location=location,
-                            tech_stack=[tech.strip() for tech in tech_stack.split(',')],
-                            consent_timestamp=datetime.now().isoformat()
-                        )
-                        
-                    # Save candidate info and initialize chat
-                    candidate_dict = candidate_info.to_dict()
-                    db_manager.save_candidate(candidate_dict)
+                    candidate_info = {
+                    "full_name": full_name,
+                    "email": email,
+                    "phone": phone,
+                    "education": education,
+                    "experience_years": experience_years,
+                    "experience_months": experience_months,
+                    "desired_position": desired_position,
+                    "location": location,
+                    "tech_stack": [tech.strip() for tech in tech_stack.split(',')],
+                    "consent_timestamp" : datetime.now().isoformat()
+                    }
+                    user_id = st.session_state['user']['user_id']
+                    db_manager.save_candidate(user_id, candidate_data=candidate_info)
+                    st.session_state.assistant.candidate_info = {
+                        "experience_years": experience_years,
+                        "experience_months": experience_months,
+                        "desired_position": desired_position,
+                        "tech_stack": [tech.strip() for tech in tech_stack.split(',')]
+                    }
                     initial_response = st.session_state.assistant.get_next_response()
                     st.session_state.messages = [{"role": "assistant", "content": initial_response}]
-                    st.session_state.page = 'screening'
+                    st.session_state.page = 'interview'
                     st.rerun()
                 else:
                     st.error(error_message)
 
-def change_page(new_page):
-        st.session_state.page = new_page
-        # Clear interview-specific states when leaving screening page
-        if new_page == 'completion':
-            if 'messages' in st.session_state:
-                del st.session_state.messages
-            if 'interview_ending' in st.session_state:
-                del st.session_state.interview_ending
+# def change_page(new_page):
+#         st.session_state.page = new_page
+#         # Clear interview-specific states when leaving screening page
+#         if new_page == 'completion':
+#             if 'messages' in st.session_state:
+#                 del st.session_state.messages
+#             if 'interview_ending' in st.session_state:
+#                 del st.session_state.interview_ending
 
-def render_screening(client, db_manager):
+def render_interview(client, db_manager):
     st.title("Technical Screening Interview")
     
     if 'interview_ending' not in st.session_state:
@@ -229,16 +242,17 @@ def render_screening(client, db_manager):
         col1, col2 = st.columns(2)
         with col1:
             if st.button("Yes, End Interview", key="end_button"):
-                st.session_state.assistant.save_interview_record()
-                st.session_state.assistant.add_sentiment_analysis(client)
-                change_page('completion')
+                st.write("Analysing and Saving interview...")
+                sentiment_data = st.session_state.assistant.analyze_sentiment()
+                db_manager.save_conversation_to_db(st.session_state['user']['user_id'], st.session_state.messages, sentiment_data)
+                st.session_state.page = "completion"
                 st.rerun()
         with col2:
             if st.button("No, Continue Chat", key="continue_button"):
                 st.session_state.interview_ending = False
                 st.rerun()
 
-def render_completion(db_manager):
+def render_completion():
     st.title("Interview Complete! 🎉")
 
     st.markdown("""
@@ -252,4 +266,4 @@ def render_completion(db_manager):
 
     Best of luck with your application! 👋
     """)
-    st.balloons()
+    st.balloons() 
