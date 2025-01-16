@@ -193,8 +193,8 @@ class DatabaseMan:
         query = """
         UPDATE candidates
         SET full_name = %s, email = %s, phone = %s, education = %s, 
-            experience_years = %d, experience_months=%d, desired_position = %s, location = %s, tech_stack = %s, consent_timestamp = %s
-        WHERE user_id = %s
+            experience_years = %s, experience_months=%s, desired_position = %s, location = %s, tech_stack = %s, consent_timestamp = %s
+        WHERE id = %s
         """
         self.cursor.execute(
             query,
