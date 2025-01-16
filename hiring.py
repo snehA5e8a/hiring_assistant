@@ -17,7 +17,7 @@ class HiringAssistant:
         
         messages = [
             {"role": "system", "content": f"""You are an AI technical interviewer conducting a screening interview for a {self.candidate_info.desired_position} position.
-        The candidate has {self.candidate_info.experience} years of experience and expertise in: {', '.join(self.candidate_info.tech_stack)}.
+        The candidate has {self.candidate_info.experience_years} years and {self.candidate_info.experience_months} months of experience and expertise in: {', '.join(self.candidate_info.tech_stack)}.
         First you need to check if the expertise mentioned are relevant to the position, it may be some random words.
         If not a relevant skill, inform the candidate the same and move to next relevant skill
 

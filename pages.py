@@ -15,10 +15,11 @@ def login_page(db_manager):
         password = st.text_input("Password", type="password", key="login_password")
         if st.button("Login"):
             is_authenticated, role, user_id = db_manager.login_user(username, password)
+            print('line19', type(user_id), user_id) # debugging
             if is_authenticated:
                 st.session_state['user'] = {'username': username, 'role': role, 'user_id': user_id}
+                print('line21', type(st.session_state['user']['user_id'])) # debugging
                 st.success(f"Welcome {username}! Redirecting to the welcome page...")
-                st.session_state['user'] = {'username': username, 'role': role}
                 st.session_state.page = 'welcome'
                 st.rerun()
             else:
@@ -34,13 +35,20 @@ def login_page(db_manager):
         if st.button("Sign Up"):
             if password != confirm_password:
                 st.error("Passwords do not match!")
+            elif len(username.strip()) == 0:
+                st.error("Username cannot be empty.")       
             else:
                 try:
-                    db_manager.register_user(username, password, role)
-                    st.success("User registered successfully! ")
-                    st.session_state['user'] = {'username': username, 'role': role, user_id: user_id}
-                    st.session_state.page = 'welcome'   
-                    st.rerun()
+                    if db_manager.check_username_availability(username):
+                        user_id = db_manager.register_user(username, password, role)
+                        print('line44',type(user_id)) # debugging
+                        st.success("User registered successfully! ")
+                        st.session_state['user'] = {'username': username, 'role': role, 'user_id': user_id}
+                        print('line47', type(st.session_state['user']['user_id'])) # debugging
+                        st.session_state.page = 'welcome'   
+                        st.rerun()
+                    else: 
+                        st.error("Username already taken. Please choose a different username.")
                 except Exception as e:
                     st.error(f"Error registering user: {e}")
 
@@ -75,48 +83,105 @@ def render_welcome(db_manager):
 
 def render_collect_info(db_manager):
     st.title("Let's Get to Know You")
+
+    # Fetch existing user data
+    user_id = st.session_state['user']['user_id']
+    print('line89', type(user_id)) # debugging
+    user_data = db_manager.get_candidate_info(user_id)
     
-    with st.form("candidate_info_form"):
-        full_name = st.text_input("Full Name*")
-        email = st.text_input("Email Address*")
-        phone = st.text_input("Phone Number*")
-        education = st.text_input("Education*", help="Example: Bachelor's in Computer Science")
+    if user_data:
+        # st.write(f"Welcome back, {user_data['full_name']}!")
+        st.info("You have already submitted your information. You can modify or delete it.")
+        # Pre-fill the form with existing data
+        full_name = st.text_input("Full Name*", value=user_data['full_name'])
+        email = st.text_input("Email Address*", value=user_data['email'])
+        phone = st.text_input("Phone Number*", value=user_data['phone'])
+        education = st.text_input("Education*", value=user_data['education'])
         col1, col2 = st.columns(2)
         with col1:
-            experience_years = st.number_input("Years of Experience*", min_value=0, step=1, format="%d")
+            experience_years = st.number_input("Years of Experience*", min_value=0, step=1, format="%d", 
+                                               value=int(user_data['experience_years']))
         with col2:
-            experience_months = st.number_input("Months of Experience*", min_value=0, max_value=11, step=1, format="%d")
-        desired_position = st.text_input("Desired Position*")
-        location = st.text_input("Current Location*")
+            experience_months = st.number_input("Months of Experience*", min_value=0, max_value=11, step=1, format="%d", 
+                                                value=int(user_data['experience_months']))
+        desired_position = st.text_input("Desired Position*", value=user_data['desired_position'])
+        location = st.text_input("Current Location*", value=user_data['location'])
         tech_stack = st.text_input("Tech Stack (comma-separated list)*", 
-                                    help="Example: Python, React, MongoDB")
+                                    value=", ".join(user_data['tech_stack']))
+
+        modify_button = st.button("Modify")
+        delete_button = st.button("Delete")
         
-        submit_button = st.form_submit_button("Submit")
-        
-        if submit_button:
-            experience = f"{experience_years} years, {experience_months} months"
-            # Validate required fields
+        if modify_button:
             is_valid, error_message = utils.validate_inputs(full_name, email, phone, desired_position, location, tech_stack)
             if is_valid:
-                candidate_info = utils.CandidateInfo(
-                        full_name=full_name,
-                        email=email,
-                        phone=phone,
-                        experience=experience,
-                        desired_position=desired_position,
-                        location=location,
-                        tech_stack=[tech.strip() for tech in tech_stack.split(',')],
-                        consent_timestamp=datetime.now().isoformat()
-                    )
-                    
-                # Save candidate info and initialize chat
-                st.session_state.assistant.save_candidate_info(candidate_info)
-                initial_response = st.session_state.assistant.get_next_response()
-                st.session_state.messages = [{"role": "assistant", "content": initial_response}]
-                st.session_state.page = 'screening'
+                updated_info = {
+                    "full_name": full_name,
+                    "email": email,
+                    "phone": phone,
+                    "education": education,
+                    "experience_years": experience_years,
+                    "experience_months": experience_months,
+                    "desired_position": desired_position,
+                    "location": location,
+                    "tech_stack": [tech.strip() for tech in tech_stack.split(',')],
+                }
+                db_manager.update_candidate_info(user_id, updated_info)
+                st.success("Your information has been updated!")
                 st.rerun()
             else:
                 st.error(error_message)
+        
+        if delete_button:
+            db_manager.delete_candidate_info(user_id)
+            st.success("Your information has been deleted!")
+            st.rerun()
+    
+    else:    
+        st.title("Let's Get to Know You")
+        
+        with st.form("candidate_info_form"):
+            full_name = st.text_input("Full Name*")
+            email = st.text_input("Email Address*")
+            phone = st.text_input("Phone Number*")
+            education = st.text_input("Education*", help="Example: Bachelor's in Computer Science")
+            col1, col2 = st.columns(2)
+            with col1:
+                experience_years = st.number_input("Years of Experience*", min_value=0, step=1, format="%d")
+            with col2:
+                experience_months = st.number_input("Months of Experience*", min_value=0, max_value=11, step=1, format="%d")
+            desired_position = st.text_input("Desired Position*")
+            location = st.text_input("Current Location*")
+            tech_stack = st.text_input("Tech Stack (comma-separated list)*", 
+                                        help="Example: Python, React, MongoDB")
+            
+            submit_button = st.form_submit_button("Submit")
+            
+            if submit_button:
+                # Validate required fields
+                is_valid, error_message = utils.validate_inputs(full_name, email, phone, desired_position, location, tech_stack)
+                if is_valid:
+                    candidate_info = utils.CandidateInfo(
+                            full_name=full_name,
+                            email=email,
+                            phone=phone,
+                            experience_years=experience_years,
+                            experience_months=experience_months,
+                            desired_position=desired_position,
+                            location=location,
+                            tech_stack=[tech.strip() for tech in tech_stack.split(',')],
+                            consent_timestamp=datetime.now().isoformat()
+                        )
+                        
+                    # Save candidate info and initialize chat
+                    candidate_dict = candidate_info.to_dict()
+                    db_manager.save_candidate(candidate_dict)
+                    initial_response = st.session_state.assistant.get_next_response()
+                    st.session_state.messages = [{"role": "assistant", "content": initial_response}]
+                    st.session_state.page = 'screening'
+                    st.rerun()
+                else:
+                    st.error(error_message)
 
 def change_page(new_page):
         st.session_state.page = new_page
