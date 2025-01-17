@@ -96,7 +96,6 @@ class DatabaseMan:
         
         if result:
             stored_password, role, user_id = result
-            print('line97 login user fun', type(user_id)) # debugging
             if verify_password(password, stored_password):
                 return True, role, user_id
             else:
@@ -259,24 +258,34 @@ class DatabaseMan:
             
             # Commit the transaction
             self.conn.commit()
-            print("Conversation and evaluation saved successfully.") # debugging
         except Exception as e:
-            print(f"Error saving conversation and evaluation: {e}") # debugging
             self.conn.rollback()
         finally:
             self.cursor.close()
             self.conn.close()
     
-    def fetch_one(self, query, params=None):
-        """Fetch a single record."""
-        self.cursor.execute(query, params)
-        return self.cursor.fetchone()
+    def get_interviews(self, user_id):
 
-    def fetch_all(self, query, params=None):
-        """Fetch all records."""
-        self.cursor.execute(query, params)
-        return self.cursor.fetchall()
-
+        try:
+            query = """
+            SELECT conversation_history 
+            FROM interviews 
+            WHERE user_id = %s
+            """
+            self.cursor.execute(query, (user_id,))
+            result = self.cursor.fetchone()
+            
+            if result and result[0]:  # If a conversation history exists
+                return result[0]  # Assuming JSON format in DB
+            
+            return False  # No conversation found
+        except Exception as e:
+            print(f"Error checking conversation: {e}")
+            return False
+        finally:
+            self.cursor.close()
+            self.conn.close()
+              
     def close(self):
         """Close the database connection."""
         self.cursor.close()

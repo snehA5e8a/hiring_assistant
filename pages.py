@@ -15,10 +15,8 @@ def login_page(db_manager):
         password = st.text_input("Password", type="password", key="login_password")
         if st.button("Login"):
             is_authenticated, role, user_id = db_manager.login_user(username, password)
-            print('line19', type(user_id), user_id) # debugging
             if is_authenticated:
                 st.session_state['user'] = {'username': username, 'role': role, 'user_id': user_id}
-                print('line21', type(st.session_state['user']['user_id'])) # debugging
                 st.success(f"Welcome {username}! Redirecting to the welcome page...")
                 st.session_state.page = 'welcome'
                 st.rerun()
@@ -41,10 +39,8 @@ def login_page(db_manager):
                 try:
                     if db_manager.check_username_availability(username):
                         user_id = db_manager.register_user(username, password, role)
-                        print('line44',type(user_id)) # debugging
                         st.success("User registered successfully! ")
                         st.session_state['user'] = {'username': username, 'role': role, 'user_id': user_id}
-                        print('line47', type(st.session_state['user']['user_id'])) # debugging
                         st.session_state.page = 'welcome'   
                         st.rerun()
                     else: 
@@ -82,14 +78,13 @@ def render_welcome(db_manager):
             st.rerun()
 
 def render_collect_info(db_manager):
-
     # Fetch existing user data
     user_id = st.session_state['user']['user_id']
-    print('line89', type(user_id)) # debugging
     user_data = db_manager.get_candidate_info(user_id)
+    st.session_state.interview_history = db_manager.get_interviews(user_id)
     
     if user_data:
-        # st.write(f"Welcome back, {user_data['full_name']}!")
+        st.write(f"Welcome back, {user_data['full_name']}!")
         st.info("You have already submitted your information. You can modify or delete it.")
         # Pre-fill the form with existing data
         full_name = st.text_input("Full Name*", value=user_data['full_name'])
@@ -110,6 +105,7 @@ def render_collect_info(db_manager):
 
         modify_button = st.button("Modify")
         delete_button = st.button("Delete")
+        go_to_interview = st.button("Go to Interview")
         
         if modify_button:
             is_valid, error_message = utils.validate_inputs(full_name, email, phone, desired_position, location, tech_stack)
@@ -133,16 +129,24 @@ def render_collect_info(db_manager):
                     "desired_position": updated_info["desired_position"],
                     "tech_stack": updated_info['tech_stack']
                 }
-                initial_response = st.session_state.assistant.get_next_response()
-                st.session_state.messages = [{"role": "assistant", "content": initial_response}]
-                st.session_state.page = 'interview'
-                st.rerun()
+                if st.session_state.interview_history:
+                    st.session_state.page = 'interview'    
+                    st.rerun()    
+                else:
+                    initial_response = st.session_state.assistant.get_next_response()
+                    st.session_state.messages = [{"role": "assistant", "content": initial_response}]
+                    st.session_state.page = 'interview'    
+                    st.rerun()
             else:
                 st.error(error_message)
         
         if delete_button:
             db_manager.delete_candidate_info(user_id)
             st.success("Your information has been deleted!")
+            st.rerun()
+        
+        if go_to_interview:
+            st.session_state.page = 'interview'
             st.rerun()
     
     else:    
@@ -196,61 +200,60 @@ def render_collect_info(db_manager):
                 else:
                     st.error(error_message)
 
-# def change_page(new_page):
-#         st.session_state.page = new_page
-#         # Clear interview-specific states when leaving screening page
-#         if new_page == 'completion':
-#             if 'messages' in st.session_state:
-#                 del st.session_state.messages
-#             if 'interview_ending' in st.session_state:
-#                 del st.session_state.interview_ending
-
 def render_interview(client, db_manager):
-    st.title("Technical Screening Interview")
-    
-    if 'interview_ending' not in st.session_state:
-        st.session_state.interview_ending = False
-    
-    # Display chat history
-    for message in st.session_state.messages:
-        with st.chat_message(message["role"]):
-            st.write(message["content"])
-    
-    # Only show chat input and handle messages if not in ending state
-    if not st.session_state.interview_ending:
-        if user_input := st.chat_input("Your response..."):
-            with st.chat_message("user"):
-                st.write(user_input)
-            
-            assistant_response = st.session_state.assistant.get_next_response(user_input)
-            
-            with st.chat_message("assistant"):
-                st.write(assistant_response)
-            
-            st.session_state.messages.extend([
-                {"role": "user", "content": user_input},
-                {"role": "assistant", "content": assistant_response}
-            ])
-            
-            if st.session_state.assistant.should_end_interview():
-                st.session_state.interview_ending = True
-                st.rerun()
-            
-        # Show end interview confirmation if in ending state
-    if st.session_state.interview_ending:
-        st.write("Would you like to end the interview now? Or do you have more questions or answers?")
-        col1, col2 = st.columns(2)
-        with col1:
-            if st.button("Yes, End Interview", key="end_button"):
-                st.write("Analysing and Saving interview...")
-                sentiment_data = st.session_state.assistant.analyze_sentiment()
-                db_manager.save_conversation_to_db(st.session_state['user']['user_id'], st.session_state.messages, sentiment_data)
-                st.session_state.page = "completion"
-                st.rerun()
-        with col2:
-            if st.button("No, Continue Chat", key="continue_button"):
-                st.session_state.interview_ending = False
-                st.rerun()
+    interview_history = st.session_state.interview_history
+    print(interview_history)   # Debugging
+    if interview_history:
+        st.subheader("Interview Details")
+        for interview in interview_history:
+            st.text(f'{interview['role']}:{interview['content']}')
+
+    else:
+        st.title("Technical Screening Interview")
+        if 'interview_ending' not in st.session_state:
+            st.session_state.interview_ending = False
+        
+        # Display chat history
+        for message in st.session_state.messages:
+            with st.chat_message(message["role"]):
+                st.write(message["content"])
+        
+        # Only show chat input and handle messages if not in ending state
+        if not st.session_state.interview_ending:
+            if user_input := st.chat_input("Your response..."):
+                with st.chat_message("user"):
+                    st.write(user_input)
+                
+                assistant_response = st.session_state.assistant.get_next_response(user_input)
+                
+                with st.chat_message("assistant"):
+                    st.write(assistant_response)
+                
+                st.session_state.messages.extend([
+                    {"role": "user", "content": user_input},
+                    {"role": "assistant", "content": assistant_response}
+                ])
+                
+                if st.session_state.assistant.should_end_interview():
+                    st.session_state.interview_ending = True
+                    st.rerun()
+                
+            # Show end interview confirmation if in ending state
+        if st.session_state.interview_ending:
+            st.write("Would you like to end the interview now? Or do you have more questions or answers?")
+            col1, col2 = st.columns(2)
+            with col1:
+                if st.button("Yes, End Interview", key="end_button"):
+                    st.write("Analysing and Saving interview...")
+                    sentiment_data = st.session_state.assistant.analyze_sentiment()
+                    db_manager.save_conversation_to_db(st.session_state['user']['user_id'], st.session_state.messages, sentiment_data)
+                    st.session_state.page = "completion"
+                    st.rerun()
+            with col2:
+                if st.button("No, Continue Chat", key="continue_button"):
+                    st.session_state.interview_ending = False
+                    st.rerun()
+        
 
 def render_completion():
     st.title("Interview Complete! 🎉")

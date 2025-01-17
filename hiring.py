@@ -64,7 +64,6 @@ class HiringAssistant:
             return False  # Not enough data to evaluate
         assistant_message = self.conversation_history[-2]["content"]
         user_response = self.conversation_history[-1]["content"]
-        print('assistant msg:',assistant_message, 'user response:', user_response) #debugging
 
         # Take the latest assistant message and user: pass and see if its the last one, if flag is set, return True
         messages = [
@@ -83,7 +82,6 @@ class HiringAssistant:
         Provide the answer as 'yes' or 'no'
         """}]
         response = utils.generate_openai_response(self.client, messages)
-        print(response.content) #debugging
         return response.content.strip().lower() == "yes"
   
     def analyze_sentiment(self):
@@ -96,7 +94,7 @@ class HiringAssistant:
             "Consider the candidate's responses, tone, and engagement during the interview. "
             "Evaluate their strengths, areas for improvement, and scores for technical confidence and communication. "
             "If the responses are minimal or vague, note this explicitly in your analysis. "
-            "Also check if the answers are human generated or AI generated."
+            "Also check if the answers are human generated or AI generated. - if the reply is big and detailed but given in a short time, it may be AI generated."
             "Here is the conversation: " + f"{self.conversation_history}"
         )}
         ]
@@ -148,11 +146,14 @@ class HiringAssistant:
         )
         response_data = json.loads(response.choices[0].message.function_call.arguments)
         return response_data
-
-db_manager = DatabaseMan()
-
+ 
 def main():
 
+    try:
+        db_manager = DatabaseMan()
+    except Exception as e:
+        st.error("Error connecting to the database. Please refresh.")
+    
     client = utils.open_ai_config()
 
     st.set_page_config(
