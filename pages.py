@@ -31,8 +31,7 @@ def admin_dashboard(db_manager):
             st.session_state.selected_user_name = row["Name"]
             st.session_state.page = 'interview_eval'
             st.rerun()
-        
-    
+          
 def interview_evaluation(db_manager):
     user_id = st.session_state.selected_user_id
     name = st.session_state.selected_user_name
@@ -82,12 +81,11 @@ def login_page(db_manager):
             is_authenticated, role, user_id = db_manager.login_user(username, password)
             if is_authenticated:
                 st.session_state['user'] = {'username': username, 'role': role, 'user_id': user_id}
-                st.success(f"Welcome {username}! Redirecting to the welcome page...")
                 if role == 'Admin':
                     st.success(f"Welcome {username}! Redirecting to the Admin Dashboard...")
                     st.session_state.page = 'admin_dashboard'
                 elif role == 'Candidate':
-                    st.success(f"Welcome {username}! Redirecting to the welcome page...")
+                    st.success(f"Welcome {username}! Redirecting to the Welcome Page...")
                     st.session_state.page = 'welcome'
                 st.rerun()
             else:
@@ -157,7 +155,7 @@ def render_collect_info(db_manager):
     
     if user_data:
         st.write(f"Welcome back, {user_data['full_name']}!")
-        st.info("You have already submitted your information. You can modify or delete it.")
+        st.info("You have already submitted your information. You can modify it.")
         # Pre-fill the form with existing data
         full_name = st.text_input("Full Name*", value=user_data['full_name'])
         email = st.text_input("Email Address*", value=user_data['email'])
@@ -176,7 +174,7 @@ def render_collect_info(db_manager):
                                     value=", ".join(user_data['tech_stack']))
 
         modify_button = st.button("Modify")
-        delete_button = st.button("Delete")
+        #delete_button = st.button("Delete")
         go_to_interview = st.button("Go to Interview")
         
         if modify_button:
@@ -212,10 +210,10 @@ def render_collect_info(db_manager):
             else:
                 st.error(error_message)
         
-        if delete_button:
-            db_manager.delete_candidate_info(user_id)
-            st.success("Your information has been deleted!")
-            st.rerun()
+        # if delete_button:
+        #     db_manager.delete_candidate_info(user_id)
+        #     st.success("Your information has been deleted!")
+        #     st.rerun()
         
         if go_to_interview:
             st.session_state.page = 'interview'
@@ -280,13 +278,17 @@ def render_interview(client, db_manager):
         st.subheader("Interview Details")
         for interview in interview_history:
             st.markdown(f"**{interview['role'].capitalize()}**: {interview['content']}\n")
+        if st.button("Go Back", key="back_button"):
+            if st.session_state['user']['role'] == 'Admin':
+                st.session_state.page = 'admin_dashboard'
+            else:
+                st.session_state.page = 'collect_info'
+                st.rerun()
+
         if st.button("Logout"):
             st.session_state.page = 'login'
-            st.session_state.pop(['user'])
-        if st.session_state['user']['role'] == 'Admin':
-            if st.button("Go Back", key="back_button"):
-                st.session_state.page = 'admin_dashboard'
-                st.rerun()
+            st.session_state['user'] = {}
+            st.rerun()
 
     else:
         st.title("Technical Screening Interview")
@@ -334,7 +336,6 @@ def render_interview(client, db_manager):
                     st.session_state.interview_ending = False
                     st.rerun()
         
-
 def render_completion():
     st.title("Interview Complete! 🎉")
 
