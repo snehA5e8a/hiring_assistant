@@ -280,9 +280,13 @@ def render_interview(client, db_manager):
         st.subheader("Interview Details")
         for interview in interview_history:
             st.markdown(f"**{interview['role'].capitalize()}**: {interview['content']}\n")
-        if st.button("Go Back to Admin portal", key="back_button"):
-            st.session_state.page = 'admin_dashboard'
-            st.rerun()
+        if st.button("Logout"):
+            st.session_state.page = 'login'
+            st.session_state.pop(['user'])
+        if st.session_state['user']['role'] == 'Admin':
+            if st.button("Go Back", key="back_button"):
+                st.session_state.page = 'admin_dashboard'
+                st.rerun()
 
     else:
         st.title("Technical Screening Interview")
