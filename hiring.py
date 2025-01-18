@@ -179,7 +179,11 @@ def main():
     elif st.session_state.page == 'interview':
         pages.render_interview(client, db_manager)
     elif st.session_state.page == 'completion':
-        pages.render_completion()      
+        pages.render_completion()  
+    elif st.session_state.page == 'admin_dashboard':
+        pages.admin_dashboard(db_manager)
+    elif st.session_state.page == 'interview_eval':
+        pages.interview_evaluation(db_manager)
         
 if __name__ == "__main__":    
     main()

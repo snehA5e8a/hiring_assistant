@@ -4,6 +4,7 @@ import os
 import json
 import bcrypt
 from psycopg2.extras import Json
+import ast
 
 
 # Load environment variables
@@ -286,6 +287,48 @@ class DatabaseMan:
             self.cursor.close()
             self.conn.close()
               
+    def fetch_user_table(self):
+        query = """
+        SELECT 
+            c.full_name, 
+            c.desired_position, 
+            u.id as user_id
+        FROM 
+            candidates c
+        JOIN 
+            users u
+        ON 
+            c.user_id = u.id
+        WHERE 
+            u.role = 'Candidate';
+    """
+        self.cursor.execute(query)
+        rows = self.cursor.fetchall()
+        self.conn.close()
+        return rows
+    
+    def fetch_interview_evaluation(self, user_id):
+        query = """
+            SELECT overall_sentiment, key_strengths, technical_confidence_score, conversation_authenticity_score, communication_score, areas_for_improvement
+            FROM interviews 
+            WHERE user_id = %s
+            """
+        self.cursor.execute(query, (user_id,))
+        result = self.cursor.fetchone()
+        
+        if result:
+            return {
+            "Overall Sentiment": result[0],
+            "Key Strengths": ast.literal_eval(result[1]) if result[1] else None,
+            "Technical Confidence Score": result[2],
+            "Conversation Authenticity Score": result[3] if result[3] is not None else "Not Evaluated",
+            "Communication Score": result[4],
+            "Areas for Improvement": ast.literal_eval(result[5]) if result[5] else None
+            }
+        else:
+            return False
+    
+
     def close(self):
         """Close the database connection."""
         self.cursor.close()

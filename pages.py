@@ -1,14 +1,79 @@
 import streamlit as st
 import utils
 from datetime import datetime
+import pandas as pd
 
+
+def admin_dashboard(db_manager):
+
+    data = db_manager.fetch_user_table()
+    if not data:
+        st.warning("No candidates found.")
+        return
+    
+    # Convert to DataFrame for Streamlit table
+    df = pd.DataFrame(data, columns=["Name", "Desired Designation", "User ID"])
+
+    # Display table
+    st.title("Candidates Table")
+
+    col1, col2, col3, col4 = st.columns([3, 3, 2, 2])
+    col1.markdown("**Name**")
+    col2.markdown("**Desired Designation**")
+    col4.markdown("**More Details**")
+
+    for index, row in df.iterrows():
+        col1, col2, col3, col4 = st.columns([3, 3, 2, 2])
+        col1.write(row["Name"])
+        col2.write(row["Desired Designation"])
+        if col4.button(f"Select", key=f"select_{row['User ID']}"):
+            st.session_state.selected_user_id = row["User ID"]
+            st.session_state.selected_user_name = row["Name"]
+            st.session_state.page = 'interview_eval'
+            st.rerun()
+        
+    
+def interview_evaluation(db_manager):
+    user_id = st.session_state.selected_user_id
+    name = st.session_state.selected_user_name
+    evaluation_data = db_manager.fetch_interview_evaluation(user_id)
+    st.session_state.interview_history = db_manager.get_interviews(user_id)
+
+    if not evaluation_data:
+        st.warning("No interview evaluations found.")
+    else:
+        st.title(f"Interview Evaluation Results of {name}")
+
+        # Display each field in a structured way
+        st.subheader("Evaluation Overview")
+        st.markdown(f"**Overall Sentiment:** {evaluation_data['Overall Sentiment']}")
+        st.markdown(f"**Technical Confidence Score:** {evaluation_data['Technical Confidence Score']}")
+        st.markdown(f"**Conversation Authenticity Score:** {evaluation_data['Conversation Authenticity Score']}")
+        st.markdown(f"**Communication Score:** {evaluation_data['Communication Score']}")
+
+        st.subheader("Key Strengths")
+        if evaluation_data["Key Strengths"]:
+            for strength in evaluation_data["Key Strengths"]:
+                st.markdown(f"- {strength}")
+        else:
+            st.markdown("No strengths identified.")
+
+        st.subheader("Areas for Improvement")
+        if evaluation_data["Areas for Improvement"]:
+            for improvement in evaluation_data["Areas for Improvement"]:
+                st.markdown(f"- {improvement}")
+        else:
+            st.markdown("No areas for improvement identified.")
+        
+        if st.button("read_interview"):
+            st.session_state.page = 'interview'
+            st.rerun()            
 
 def login_page(db_manager):
     st.title("User Login")
 
     # Tabs for Login and Signup
     tab_login, tab_signup = st.tabs(["Login", "Signup"])
-
     with tab_login:
         st.subheader("Login")
         username = st.text_input("Username", key="login_username")
@@ -18,7 +83,12 @@ def login_page(db_manager):
             if is_authenticated:
                 st.session_state['user'] = {'username': username, 'role': role, 'user_id': user_id}
                 st.success(f"Welcome {username}! Redirecting to the welcome page...")
-                st.session_state.page = 'welcome'
+                if role == 'Admin':
+                    st.success(f"Welcome {username}! Redirecting to the Admin Dashboard...")
+                    st.session_state.page = 'admin_dashboard'
+                elif role == 'Candidate':
+                    st.success(f"Welcome {username}! Redirecting to the welcome page...")
+                    st.session_state.page = 'welcome'
                 st.rerun()
             else:
                 st.error("Invalid username or password!")
@@ -28,8 +98,7 @@ def login_page(db_manager):
         username = st.text_input("Username", key="signup_username")
         password = st.text_input("Password", type="password", key="signup_password")
         confirm_password = st.text_input("Confirm Password", type="password", key="confirm_password")
-        role = st.selectbox("Role", options=["Candidate", "Admin"], key="signup_role")
-
+        role = st.selectbox("Role", ["Candidate", "Admin"], key="role")
         if st.button("Sign Up"):
             if password != confirm_password:
                 st.error("Passwords do not match!")
@@ -41,7 +110,10 @@ def login_page(db_manager):
                         user_id = db_manager.register_user(username, password, role)
                         st.success("User registered successfully! ")
                         st.session_state['user'] = {'username': username, 'role': role, 'user_id': user_id}
-                        st.session_state.page = 'welcome'   
+                        if role == 'Admin':
+                            st.session_state.page = 'admin_dashboard'
+                        elif role == 'Candidate':
+                            st.session_state.page = 'welcome'
                         st.rerun()
                     else: 
                         st.error("Username already taken. Please choose a different username.")
@@ -201,12 +273,16 @@ def render_collect_info(db_manager):
                     st.error(error_message)
 
 def render_interview(client, db_manager):
+    
     interview_history = st.session_state.interview_history
-    print(interview_history)   # Debugging
+    
     if interview_history:
         st.subheader("Interview Details")
         for interview in interview_history:
-            st.text(f'{interview['role']}:{interview['content']}')
+            st.markdown(f"**{interview['role'].capitalize()}**: {interview['content']}\n")
+        if st.button("Go Back to Admin portal", key="back_button"):
+            st.session_state.page = 'admin_dashboard'
+            st.rerun()
 
     else:
         st.title("Technical Screening Interview")
