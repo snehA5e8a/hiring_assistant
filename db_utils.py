@@ -47,7 +47,6 @@ class DatabaseMan:
         if self.cursor.closed:
             self.cursor = self.conn.cursor()
 
-
     def create_tables(self):
         CREATE_USERS_TABLE = """
         CREATE TABLE IF NOT EXISTS users (
@@ -87,6 +86,7 @@ class DatabaseMan:
         self.conn.commit()
 
     def check_username_availability(self, username):
+        self.ensure_connection()
         query = """
         SELECT COUNT(*) FROM USERS WHERE username = %s
         """
@@ -95,6 +95,7 @@ class DatabaseMan:
         return count == 0  # Return True if username does not exist
 
     def register_user(self, username, password, role):
+        self.ensure_connection()
         hashed_password = hash_password(password)
         query = """
         INSERT INTO users (username, password, role)
@@ -107,6 +108,7 @@ class DatabaseMan:
         return user_id  # Return the user ID
     
     def login_user(self, username, password):
+        self.ensure_connection()
         """Verify the user credentials."""
         query = "SELECT password, role, id FROM users WHERE username = %s"
         self.cursor.execute(query, (username,))
@@ -267,7 +269,7 @@ class DatabaseMan:
             self.conn.close()
     
     def get_interviews(self, user_id):
-
+        self.ensure_connection()
         try:
             query = """
             SELECT conversation_history 
@@ -289,6 +291,7 @@ class DatabaseMan:
             self.conn.close()
               
     def fetch_user_table(self):
+        self.ensure_connection()
         query = """
         SELECT 
             c.full_name, 
@@ -309,6 +312,7 @@ class DatabaseMan:
         return rows
     
     def fetch_interview_evaluation(self, user_id):
+        self.ensure_connection()
         query = """
             SELECT overall_sentiment, key_strengths, technical_confidence_score, conversation_authenticity_score, communication_score, areas_for_improvement
             FROM interviews 
@@ -329,8 +333,3 @@ class DatabaseMan:
         else:
             return False
     
-
-    def close(self):
-        """Close the database connection."""
-        self.cursor.close()
-        self.conn.close()
