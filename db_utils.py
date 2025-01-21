@@ -20,16 +20,33 @@ def verify_password(password, hashed):
 
 class DatabaseMan:
     def __init__(self):
-        self.conn = psycopg2.connect(
-            host=os.getenv('host'),
-            database=os.getenv('database'),
-            user=os.getenv('user'),
-            password=os.getenv('password'),
-            port=os.getenv('port'),
-            sslmode='require'
-        )
-        self.cursor = self.conn.cursor()
-        self.create_tables()
+        try:
+            self.conn = psycopg2.connect(
+                host=os.getenv('host'),
+                database=os.getenv('database'),
+                user=os.getenv('user'),
+                password=os.getenv('password'),
+                port=os.getenv('port'),
+                sslmode='require'
+            )
+            self.cursor = self.conn.cursor()
+            self.create_tables()
+        except Exception as e:
+            raise Exception(f"Database connection error: {e}")
+        
+    def ensure_connection(self):
+        if self.conn.closed:
+            self.conn = psycopg2.connect(
+                host=os.getenv('host'),
+                database=os.getenv('database'),
+                user=os.getenv('user'),
+                password=os.getenv('password'),
+                port=os.getenv('port'),
+                sslmode='require'
+            )
+        if self.cursor.closed:
+            self.cursor = self.conn.cursor()
+
 
     def create_tables(self):
         CREATE_USERS_TABLE = """
@@ -105,9 +122,8 @@ class DatabaseMan:
             return False, None, None
 
     def save_candidate(self, user_id, candidate_data):
-        """
-        Save candidate information and link it to the users table via the user_id foreign key.
-        """
+
+        self.ensure_connection()
         query = """
         INSERT INTO candidates (user_id, full_name, email, phone, education, experience_years, experience_months, desired_position, location, tech_stack, consent_timestamp)
         VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
@@ -136,20 +152,9 @@ class DatabaseMan:
         # Return the id of the newly created candidate
         return self.cursor.fetchone()[0]  # This will return the newly inserted candidate's id
 
-    def execute_query(self, query, params=None):
-        """Execute a query with optional parameters."""
-        try:
-            self.cursor.execute(query, params)
-            self.conn.commit()
-        except Exception as e:
-            self.conn.rollback()
-            print(f"Database query failed: {e}")
-            raise
-
     def get_candidate_info(self, user_id):
-        """
-        Fetch candidate information for a given user_id, handling missing columns gracefully.
-        """
+        
+        self.ensure_connection()
         if not isinstance(user_id, int):
             raise ValueError(f"Invalid user_id: Expected an integer, got {type(user_id).__name__}")
 
@@ -198,9 +203,7 @@ class DatabaseMan:
         return user_info
 
     def update_candidate_info(self, user_id, updated_info):
-        """
-        Update candidate information for a given user_id.
-        """
+        self.ensure_connection()
         query = """
         UPDATE candidates
         SET full_name = %s, email = %s, phone = %s, education = %s, 
@@ -226,9 +229,7 @@ class DatabaseMan:
         self.conn.commit()
 
     def delete_candidate_info(self, user_id):
-        """
-        Delete candidate information for a given user_id.
-        """
+        self.ensure_connection()
         query = "DELETE FROM candidates WHERE user_id = %s"
         self.cursor.execute(query, (user_id,))
         self.conn.commit()

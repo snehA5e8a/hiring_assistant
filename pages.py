@@ -174,7 +174,7 @@ def render_collect_info(db_manager):
                                     value=", ".join(user_data['tech_stack']))
 
         modify_button = st.button("Modify")
-        #delete_button = st.button("Delete")
+        delete_button = st.button("Delete")
         go_to_interview = st.button("Go to Interview")
         
         if modify_button:
@@ -210,10 +210,10 @@ def render_collect_info(db_manager):
             else:
                 st.error(error_message)
         
-        # if delete_button:
-        #     db_manager.delete_candidate_info(user_id)
-        #     st.success("Your information has been deleted!")
-        #     st.rerun()
+        if delete_button:
+            db_manager.delete_candidate_info(user_id)
+            st.success("Your information has been deleted!")
+            st.rerun()
         
         if go_to_interview:
             st.session_state.page = 'interview'

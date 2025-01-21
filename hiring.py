@@ -147,20 +147,21 @@ class HiringAssistant:
         response_data = json.loads(response.choices[0].message.function_call.arguments)
         return response_data
  
-def main():
 
-    try:
-        db_manager = DatabaseMan()
-    except Exception as e:
-        st.error("Error connecting to the database. Please refresh.")
-    
-    client = utils.open_ai_config()
+try:
+    db_manager = DatabaseMan()
+except Exception as e:
+    st.error("Error connecting to the database. Please refresh.")
+
+def main():
 
     st.set_page_config(
         page_title="TalentScout Hiring Assistant",
         page_icon="👋",
         layout="wide"
     )
+    
+    client = utils.open_ai_config()
     
     # Initialize session states
     if 'page' not in st.session_state:
